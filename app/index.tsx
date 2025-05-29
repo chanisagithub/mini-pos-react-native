@@ -1,68 +1,67 @@
-import React, { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { initDatabase } from './data/database';
-import { Text, View, StyleSheet, ActivityIndicator } from 'react-native';
-import AppNavigator from './navigation/AppNavigator'; // Adjust path
-import { COLORS, SIZES } from './constants/theme'; // Adjust path
+// your-expo-project/app/index.tsx
+import React from 'react';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { Link, useRouter } from 'expo-router';
+import { COLORS, SIZES } from '../constants/theme'; // Adjust path
 
-export default function App() {
-  const [dbInitialized, setDbInitialized] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export default function HomeScreen() {
+  const router = useRouter();
 
-  useEffect(() => {
-    initDatabase()
-      .then(() => {
-        setDbInitialized(true);
-        console.log('Database ready!');
-      })
-      .catch(err => {
-        console.error('Database initialization failed:', err);
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-        setError(`Failed to initialize the database: ${errorMessage}. Please restart the app.`);
-      });
-  }, []);
-
-  if (error) {
-    return (
-      <View style={styles.centerMessage}>
-        <Text style={styles.errorText}>{error}</Text>
-      </View>
-    );
-  }
-
-  if (!dbInitialized) {
-    return (
-      <View style={styles.centerMessage}>
-        <ActivityIndicator size="large" color={COLORS.primaryOrange} />
-        <Text style={styles.loadingText}>Initializing Database...</Text>
-      </View>
-    );
-  }
-
-  // Once DB is initialized, render your main app navigation
   return (
-    <NavigationContainer>
-      <AppNavigator />
-    </NavigationContainer>
+    <View style={styles.container}>
+      <Text style={styles.title}>Mini POS</Text>
+
+      {/* Option 1: Using Link component for navigation */}
+      <Link href="/item-management" asChild>
+        <Pressable style={styles.button}>
+          <Text style={styles.buttonText}>Manage Items</Text>
+        </Pressable>
+      </Link>
+
+      <Link href="/new-order" asChild disabled>
+        <Pressable style={[styles.button, styles.disabledButton]} disabled>
+          <Text style={styles.buttonText}>New Order (Coming Soon)</Text>
+        </Pressable>
+      </Link>
+
+      {/* Option 2: Imperative navigation with useRouter hook
+      <Pressable style={styles.button} onPress={() => router.push('/item-management')}>
+        <Text style={styles.buttonText}>Manage Items (useRouter)</Text>
+      </Pressable>
+      */}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  centerMessage: {
+  container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: SIZES.padding,
     backgroundColor: COLORS.primaryBlack,
+    padding: SIZES.padding,
   },
-  loadingText: {
-    marginTop: SIZES.base,
-    fontSize: SIZES.body3,
+  title: {
+    fontSize: SIZES.h1,
     color: COLORS.primaryOrange,
-  },
-  errorText: {
-    fontSize: SIZES.body3,
-    color: COLORS.error,
+    marginBottom: SIZES.padding * 2,
     textAlign: 'center',
+  },
+  button: {
+    backgroundColor: COLORS.primaryOrange,
+    paddingVertical: SIZES.padding / 1.5,
+    paddingHorizontal: SIZES.padding * 2,
+    borderRadius: SIZES.radius,
+    marginVertical: SIZES.base * 1.5,
+    width: '80%',
+    alignItems: 'center',
+  },
+  disabledButton: {
+    backgroundColor: COLORS.mediumGray,
+  },
+  buttonText: {
+    color: COLORS.primaryBlack,
+    fontSize: SIZES.h3,
+    fontWeight: 'bold',
   },
 });
