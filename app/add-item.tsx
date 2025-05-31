@@ -1,27 +1,69 @@
 // your-expo-project/app/add-item.tsx
-import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, ScrollView, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
-import { ItemCategory } from '../models/item.model'; // Adjust path
-import { addItem } from '../data/database'; // Adjust path
-import { COLORS, SIZES } from '../constants/theme'; // Adjust path
-// If you want a Picker for categories:
-// import { Picker } from '@react-native-picker/picker'; // npm install @react-native-picker/picker
+import React, { useState, useEffect, useLayoutEffect } from 'react'; // Added useEffect, useLayoutEffect
+import { View, Text, TextInput, StyleSheet, ScrollView, Alert, Pressable,ActivityIndicator } from 'react-native';
+import { useRouter, useLocalSearchParams, Stack } from 'expo-router'; // Added useLocalSearchParams, Stack
+import { ItemCategory, Item } from '../models/item.model';
+import { addItem, getItemById, updateItem } from '../data/database'; // Added getItemById, updateItem
+import { COLORS, SIZES } from '../constants/theme';
+// import { Picker } from '@react-native-picker/picker';
 
-export default function AddItemScreen() {
+interface AddEditItemScreenParams {
+  itemId?: string;
+}
+
+export default function AddEditItemScreen() { // Renamed component for clarity
   const router = useRouter();
+//   const params = useLocalSearchParams<{ itemId?: string }>();
+const params = useLocalSearchParams<AddEditItemScreenParams>();
+  const itemId = params.itemId ? parseInt(params.itemId, 10) : undefined;
+  const isEditMode = itemId !== undefined;
+
   const [name, setName] = useState('');
-  const [category, setCategory] = useState<ItemCategory>(ItemCategory.MAIN); // Default category
+  const [category, setCategory] = useState<ItemCategory>(ItemCategory.MAIN);
   const [price, setPrice] = useState('');
   const [quantityInStock, setQuantityInStock] = useState('');
-  const [lowStockThreshold, setLowStockThreshold] = useState('5'); // Default low stock
+  const [lowStockThreshold, setLowStockThreshold] = useState('5');
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false); // For loading item data in edit mode
+
+  useEffect(() => {
+    if (isEditMode && itemId) {
+      setIsLoading(true);
+      const loadItemData = async () => {
+        try {
+          const item = await getItemById(itemId);
+          if (item) {
+            setName(item.name);
+            setCategory(item.category);
+            setPrice(item.price.toString());
+            setQuantityInStock(item.quantityInStock.toString());
+            setLowStockThreshold((item.lowStockThreshold || 5).toString());
+          } else {
+            setError('Item not found.');
+            Alert.alert('Error', 'Item not found. It might have been deleted.');
+            router.back();
+          }
+        } catch (e: any) {
+          console.error('Failed to load item data:', e);
+          setError(e.message || 'Failed to load item data.');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      loadItemData();
+    }
+  }, [itemId, isEditMode, router]);
 
   const handleSaveItem = async () => {
     setError(null);
     if (!name.trim() || !price.trim() || !quantityInStock.trim()) {
       setError('Name, Price, and Quantity are required.');
       return;
+    }
+
+    if (price.includes(',') || !/^\d*\.?\d*$/.test(price)) {
+        setError('Please enter a valid price (use dot for decimals)');
+        return;
     }
 
     const numericPrice = parseFloat(price);
@@ -36,33 +78,51 @@ export default function AddItemScreen() {
       setError('Quantity must be a non-negative number.');
       return;
     }
-    if (isNaN(numericLowStock) || numericLowStock < 0) {
+     if (isNaN(numericLowStock) || numericLowStock < 0) {
       setError('Low stock threshold must be a non-negative number.');
       return;
     }
 
+    const itemData: Omit<Item, 'id'> = {
+      name: name.trim(),
+      category,
+      price: numericPrice,
+      quantityInStock: numericQuantity,
+      lowStockThreshold: numericLowStock,
+    };
+
     try {
-      await addItem({
-        name: name.trim(),
-        category,
-        price: numericPrice,
-        quantityInStock: numericQuantity,
-        lowStockThreshold: numericLowStock,
-      });
-      Alert.alert('Success', 'Item added successfully!');
-      router.back(); // Go back to the item management screen
-      // You might want to add a way to refresh the list on the previous screen
+      if (isEditMode && itemId) {
+        await updateItem({ ...itemData, id: itemId });
+        Alert.alert('Success', 'Item updated successfully!');
+      } else {
+        await addItem(itemData);
+        Alert.alert('Success', 'Item added successfully!');
+      }
+      router.back();
     } catch (e: any) {
       console.error('Failed to save item:', e);
-      if (e.message && e.message.toLowerCase().includes('unique constraint failed')) {
+       if (e.message && e.message.toLowerCase().includes('unique constraint failed')) {
         setError(`An item with the name "${name.trim()}" already exists.`);
       } else {
-        setError(e.message || 'Failed to save item. Please try again.');
+        setError(e.message || `Failed to ${isEditMode ? 'update' : 'save'} item. Please try again.`);
       }
     }
   };
 
+  if (isLoading && isEditMode) { // Show loading only in edit mode while fetching data
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primaryOrange} />
+        <Text>Loading item details...</Text>
+      </View>
+    );
+  }
+
   return (
+    <>
+    {/* This allows setting screen options from within the component if it's a route component */}
+    <Stack.Screen options={{ title: isEditMode ? 'Edit Item' : 'Add New Item' }} />
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <Text style={styles.label}>Item Name:</Text>
       <TextInput
@@ -73,7 +133,6 @@ export default function AddItemScreen() {
       />
 
       <Text style={styles.label}>Category:</Text>
-      {/* Basic Text Input for Category - For a Picker, see comments below */}
       <View style={styles.pickerContainer}>
         {Object.values(ItemCategory).map((cat) => (
           <Pressable
@@ -85,23 +144,8 @@ export default function AddItemScreen() {
           </Pressable>
         ))}
       </View>
-      {/*
-      // Alternative: Using @react-native-picker/picker
-      // <View style={styles.pickerWrapper}>
-      //   <Picker
-      //     selectedValue={category}
-      //     onValueChange={(itemValue) => setCategory(itemValue as ItemCategory)}
-      //     style={styles.picker}
-      //   >
-      //     {Object.values(ItemCategory).map((cat) => (
-      //       <Picker.Item key={cat} label={cat} value={cat} />
-      //     ))}
-      //   </Picker>
-      // </View>
-      */}
 
-
-      <Text style={styles.label}>Price ($):</Text>
+      <Text style={styles.label}>Price (Rs.):</Text>
       <TextInput
         style={styles.input}
         placeholder="e.g., 150.00"
@@ -131,19 +175,28 @@ export default function AddItemScreen() {
       {error && <Text style={styles.errorText}>{error}</Text>}
 
       <View style={styles.buttonContainer}>
-        <Button title="Save Item" onPress={handleSaveItem} color={COLORS.primaryOrange} />
+        <Pressable style={styles.saveButton} onPress={handleSaveItem}>
+            <Text style={styles.saveButtonText}>{isEditMode ? 'Update Item' : 'Save Item'}</Text>
+        </Pressable>
       </View>
       <View style={styles.buttonContainer}>
-        <Button title="Cancel" onPress={() => router.back()} color={COLORS.mediumGray} />
+         <Pressable style={styles.cancelButton} onPress={() => router.back()}>
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+        </Pressable>
       </View>
     </ScrollView>
+    </>
   );
 }
 
-// Add Pressable to imports from 'react-native' if you use the custom category picker
-import { Pressable } from 'react-native';
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.lightGray,
+  },
   container: {
     flex: 1,
     backgroundColor: COLORS.lightGray,
@@ -167,7 +220,6 @@ const styles = StyleSheet.create({
     fontSize: SIZES.body3,
     color: COLORS.primaryBlack,
   },
-  // Styles for custom category picker using Pressable
   pickerContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -179,33 +231,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: SIZES.base * 1.8,
     borderRadius: SIZES.radius * 2,
     borderColor: COLORS.primaryOrange,
-    borderWidth: 1,
+    borderWidth: 1.5, // Slightly thicker border
     marginRight: SIZES.base,
     marginBottom: SIZES.base,
   },
   categoryButtonSelected: {
     backgroundColor: COLORS.primaryOrange,
+    borderColor: COLORS.secondaryOrange, // Different border when selected
   },
   categoryButtonText: {
     color: COLORS.primaryOrange,
     fontSize: SIZES.body4,
+    fontWeight: '500',
   },
   categoryButtonTextSelected: {
-    color: COLORS.white, // Or primaryBlack if it looks better
+    color: COLORS.white,
   },
-  // Styles for @react-native-picker/picker
-  // pickerWrapper: {
-  //   backgroundColor: COLORS.white,
-  //   borderRadius: SIZES.radius,
-  //   borderColor: COLORS.mediumGray,
-  //   borderWidth: 1,
-  //   overflow: 'hidden', //
-  // },
-  // picker: {
-  //   // height: 50, // Adjust as needed
-  //   // width: '100%',
-  //   color: COLORS.primaryBlack,
-  // },
   errorText: {
     color: COLORS.error,
     marginTop: SIZES.base,
@@ -214,6 +255,28 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   buttonContainer: {
-    marginTop: SIZES.padding,
+    marginTop: SIZES.padding / 1.5,
+  },
+  saveButton: {
+    backgroundColor: COLORS.primaryOrange,
+    paddingVertical: SIZES.padding / 1.5,
+    borderRadius: SIZES.radius,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+      color: COLORS.white,
+      fontSize: SIZES.h3,
+      fontWeight: 'bold',
+  },
+  cancelButton: {
+    backgroundColor: COLORS.mediumGray,
+    paddingVertical: SIZES.padding / 1.5,
+    borderRadius: SIZES.radius,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+      color: COLORS.white,
+      fontSize: SIZES.h3,
+      fontWeight: 'bold',
   }
 });

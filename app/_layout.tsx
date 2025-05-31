@@ -67,8 +67,8 @@ export default function Layout() {
     >
       <Stack.Screen name="index" options={{ title: 'Mini POS Home' }} />
       <Stack.Screen name="item-management" options={{ title: 'Manage Your Items' }} />
-       <Stack.Screen name="add-item" options={{ title: 'Add New Item' }} /> {/* <-- Add this line */}
-   {/* <Stack.Screen name="new-order" options={{ title: 'Create New Order' }} /> */}
+      <Stack.Screen name="add-item" options={{ title: 'Item Details' }} />
+      <Stack.Screen name="new-order" options={{ title: 'Create New Order' }} />
     </Stack>
   );
 }

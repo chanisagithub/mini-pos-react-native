@@ -1,9 +1,9 @@
 // your-expo-project/app/item-management.tsx
-import React, { useEffect, useState, useCallback } from 'react'; // Added useCallback
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, Pressable } from 'react-native'; // Added Pressable
-import { useRouter, useFocusEffect } from 'expo-router'; // Added useFocusEffect
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Pressable, Alert } from 'react-native';
+import { useRouter, useFocusEffect, Link } from 'expo-router';
 import { Item, ItemCategory } from '../models/item.model';
-import { getItems /* addItem was here, but we add from AddItemScreen now */ } from '../data/database';
+import { getItems, deleteItem } from '../data/database';
 import { COLORS, SIZES } from '../constants/theme';
 
 export default function ItemManagementScreen() {
@@ -12,7 +12,7 @@ export default function ItemManagementScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchItems = useCallback(async () => { // Wrapped in useCallback
+  const fetchItems = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -25,33 +25,69 @@ export default function ItemManagementScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, []); // Empty dependency array means this function is stable
+  }, []);
 
-  // useFocusEffect will refetch items when the screen comes into focus
   useFocusEffect(
     useCallback(() => {
       fetchItems();
-    }, [fetchItems]) // fetchItems is now a dependency
+    }, [fetchItems])
   );
 
-  const renderItem = ({ item }: { item: Item }) => (
+  const handleDeleteItem = (item: Item) => {
+    Alert.alert(
+      "Confirm Delete",
+      `Are you sure you want to delete "${item.name}"? This action cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const rowsAffected = await deleteItem(item.id!);
+              if (rowsAffected > 0) {
+                Alert.alert("Success", `"${item.name}" deleted successfully.`);
+                fetchItems(); // Refresh the list
+              } else {
+                Alert.alert("Error", `Could not delete "${item.name}". It might have already been deleted or is part of an order.`);
+              }
+            } catch (e: any) {
+              console.error("Failed to delete item:", e);
+              Alert.alert("Error", `Failed to delete item: ${e.message || 'Unknown error'}`);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+const renderItem = ({ item }: { item: Item }) => (
     <View style={styles.itemContainer}>
       <View style={styles.itemTextContainer}>
-        <Text style={styles.itemName}>{item.name} <Text style={styles.itemCategory}>({item.category})</Text></Text>
+        <Text style={styles.itemName}>({item.name}) <Text style={styles.itemCategory}>({item.category})</Text></Text>
         <Text style={styles.itemDetails}>Price: Rs. {item.price.toFixed(2)}</Text>
         <Text style={styles.itemDetails}>
           Stock: {item.quantityInStock}
-          {item.quantityInStock <= (item.lowStockThreshold || 5) && ( // Check low stock
-            <Text style={styles.lowStockWarning}> (Low Stock!)</Text>
+          {item.quantityInStock <= (item.lowStockThreshold || 5) && (
+            <Text style={styles.lowStockWarning}> Low Stock!</Text>
           )}
         </Text>
       </View>
-      {/* We'll add Edit and Delete buttons here later */}
+      <View style={styles.itemActionsContainer}>
+        <Link href={{ pathname: "/add-item", params: { itemId: item.id } }} asChild>
+          <Pressable style={[styles.actionButton, styles.editButton]}>
+            <Text style={styles.actionButtonText}>Edit</Text>
+          </Pressable>
+        </Link>
+        <Pressable style={[styles.actionButton, styles.deleteButton]} onPress={() => handleDeleteItem(item)}>
+          <Text style={styles.actionButtonText}>Delete</Text>
+        </Pressable>
+      </View>
     </View>
   );
 
 
-  if (isLoading && items.length === 0) { // Show loading only if no items are displayed yet
+  if (isLoading && items.length === 0) {
     return (
       <View style={styles.centerMessage}>
         <ActivityIndicator size="large" color={COLORS.primaryOrange} />
@@ -60,7 +96,7 @@ export default function ItemManagementScreen() {
     );
   }
 
-  if (error) {
+  if (error && items.length === 0) {
     return (
       <View style={styles.centerMessage}>
         <Text style={styles.errorText}>{error}</Text>
@@ -76,8 +112,10 @@ export default function ItemManagementScreen() {
       <Pressable style={styles.button} onPress={() => router.push('/add-item')}>
         <Text style={styles.buttonText}>+ Add New Item</Text>
       </Pressable>
+      {error && <Text style={styles.inlineErrorText}>{error}</Text>}
 
-      {items.length === 0 && !isLoading ? ( // Check !isLoading here
+
+      {items.length === 0 && !isLoading ? (
         <Text style={styles.placeholderText}>No items found. Add some!</Text>
       ) : (
         <FlatList
@@ -85,8 +123,8 @@ export default function ItemManagementScreen() {
           keyExtractor={(item) => item.id!.toString()}
           renderItem={renderItem}
           contentContainerStyle={{ paddingBottom: SIZES.padding }}
-          refreshing={isLoading} // Show refresh indicator while fetching
-          onRefresh={fetchItems} // Allow pull-to-refresh
+          refreshing={isLoading}
+          onRefresh={fetchItems}
         />
       )}
     </View>
@@ -96,7 +134,6 @@ export default function ItemManagementScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // padding: SIZES.padding, // Padding applied to inner elements or FlatList content
     backgroundColor: COLORS.lightGray,
   },
   centerMessage: {
@@ -106,11 +143,18 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.lightGray,
     padding: SIZES.padding,
   },
-  errorText: {
+  errorText: { // For prominent errors
     color: COLORS.error,
-    fontSize: SIZES.body3,
+    fontSize: SIZES.h3,
     marginBottom: SIZES.padding,
     textAlign: 'center',
+  },
+  inlineErrorText: { // For less critical errors shown above list
+    color: COLORS.error,
+    fontSize: SIZES.body4,
+    textAlign: 'center',
+    paddingVertical: SIZES.base,
+    backgroundColor: '#FFD2D2' // Light red background for inline errors
   },
   placeholderText: {
     fontSize: SIZES.body3,
@@ -120,18 +164,19 @@ const styles = StyleSheet.create({
   },
   itemContainer: {
     backgroundColor: COLORS.white,
-    padding: SIZES.padding / 1.2,
+    paddingVertical: SIZES.padding / 1.5,
+    paddingHorizontal: SIZES.padding / 1.2,
     marginVertical: SIZES.base / 1.5,
-    marginHorizontal: SIZES.padding / 2, // Added horizontal margin
+    marginHorizontal: SIZES.padding / 2,
     borderRadius: SIZES.radius,
     borderColor: COLORS.mediumGray,
     borderWidth: 0.5,
-    flexDirection: 'row', // For edit/delete buttons later
-    justifyContent: 'space-between', // For edit/delete buttons later
-    alignItems: 'center', // For edit/delete buttons later
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   itemTextContainer: {
-    flex: 1, // Allow text to take available space
+    flex: 1,
   },
   itemName: {
     fontSize: SIZES.h3,
@@ -149,22 +194,46 @@ const styles = StyleSheet.create({
     marginTop: SIZES.base / 2,
   },
   lowStockWarning: {
-    color: COLORS.error, // Or primaryOrange for warning
+    color: COLORS.error,
+    fontWeight: 'bold',
+  },
+  itemActionsContainer: {
+    flexDirection: 'column', // Stack edit/delete vertically
+    alignItems: 'flex-end', // Align to the right
+  },
+  actionButton: {
+    paddingVertical: SIZES.base / 1.2,
+    paddingHorizontal: SIZES.base * 1.5,
+    borderRadius: SIZES.radius / 1.5,
+    minWidth: 60, // Ensure buttons have some width
+    alignItems: 'center',
+  },
+  editButton: {
+    backgroundColor: COLORS.secondaryOrange,
+    marginBottom: SIZES.base / 1.5, // Space between edit and delete
+  },
+  deleteButton: {
+    backgroundColor: COLORS.error,
+  },
+  actionButtonText: {
+    color: COLORS.white,
+    fontSize: SIZES.body5,
     fontWeight: 'bold',
   },
   button: {
     backgroundColor: COLORS.primaryOrange,
     padding: SIZES.padding / 1.2,
     borderRadius: SIZES.radius,
-    margin: SIZES.padding /2, // Margin around the button
+    marginVertical: SIZES.padding / 1.5,
+    marginHorizontal: SIZES.padding /2,
     alignItems: 'center',
   },
   buttonText: {
-    color: COLORS.white, // Changed to white for better contrast on orange
+    color: COLORS.white,
     fontSize: SIZES.h3,
     fontWeight: 'bold',
   },
-  buttonSmall: { // For retry button
+  buttonSmall: {
     backgroundColor: COLORS.primaryOrange,
     paddingVertical: SIZES.base,
     paddingHorizontal: SIZES.padding,

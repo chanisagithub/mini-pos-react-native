@@ -57,7 +57,7 @@ export const initDatabase = async (): Promise<void> => {
 
 /**
  * Adds a new item to the database.
- */
+*/
 export const addItem = async (item: Omit<Item, 'id'>): Promise<number> => {
   const db = await getDb();
 
@@ -120,7 +120,7 @@ export const updateItem = async (item: Item): Promise<number> => {
 
 /**
  * Deletes an item by ID.
- */
+*/
 export const deleteItem = async (id: number): Promise<number> => {
   const db = await getDb();
 
@@ -130,4 +130,91 @@ export const deleteItem = async (id: number): Promise<number> => {
   );
 
   return result.rowsAffected ?? 0;
+};
+
+/**
+ * Represents an item added to the current order (before saving to DB).
+ */
+export interface CartItem extends Item {
+  orderQuantity: number;
+}
+
+/**
+ * Saves a complete order with associated items and updates stock.
+ */
+export const saveCompleteOrder = async (
+  customerName: string,
+  cartItems: CartItem[]
+): Promise<number> => {
+  const db = await getDb();
+
+  if (cartItems.length === 0) {
+    throw new Error('Cannot save an empty order.');
+  }
+
+  const totalAmount = cartItems.reduce((sum, item) => sum + (item.price * item.orderQuantity), 0);
+  const orderDate = new Date().toISOString();
+
+  try {
+    await db.execAsync('BEGIN;');
+
+    // Insert into orders table
+    const orderResult = await db.runAsync(
+      `INSERT INTO orders (customerName, orderDate, totalAmount) VALUES (?, ?, ?);`,
+      customerName,
+      orderDate,
+      totalAmount
+    );
+
+    const newOrderId = orderResult.lastInsertRowId;
+    if (newOrderId == null) throw new Error('Failed to insert order.');
+
+    // Process each item
+    for (const item of cartItems) {
+      if (item.quantityInStock < item.orderQuantity) {
+        throw new Error(`Not enough stock for item: ${item.name}`);
+      }
+
+      await db.runAsync(
+        `INSERT INTO order_items (orderId, itemId, itemName, quantity, priceAtPurchase)
+         VALUES (?, ?, ?, ?, ?);`,
+        newOrderId,
+        item.id,
+        item.name,
+        item.orderQuantity,
+        item.price
+      );
+
+      const newStock = item.quantityInStock - item.orderQuantity;
+      await db.runAsync(
+        `UPDATE items SET quantityInStock = ? WHERE id = ?;`,
+        newStock,
+        item.id
+      );
+    }
+
+    await db.execAsync('COMMIT;');
+    return newOrderId;
+  } catch (err) {
+    console.error('[DB_LOG] saveCompleteOrder failed. Rolling back transaction.', err);
+    await db.execAsync('ROLLBACK;');
+    throw err;
+  }
+};
+
+
+// --- Fetch all orders ---
+export const getOrders = async (): Promise<Order[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Order>('SELECT * FROM orders ORDER BY orderDate DESC;');
+  return rows;
+};
+
+export const getOrderItemsByOrderId = async (orderId: number): Promise<OrderItem[]> => {
+  const db = await getDb();
+  const rows = await db.getAllAsync<OrderItem>(
+    'SELECT * FROM order_items WHERE orderId = ?;',
+    orderId
+  );
+  return rows;
 };

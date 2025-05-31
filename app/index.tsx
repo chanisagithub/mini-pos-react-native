@@ -11,24 +11,18 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>Mini POS</Text>
 
-      {/* Option 1: Using Link component for navigation */}
+      <Link href="/new-order" asChild>
+        <Pressable style={styles.button}>
+          <Text style={styles.buttonText}>New Order</Text>
+        </Pressable>
+      </Link>
+
       <Link href="/item-management" asChild>
         <Pressable style={styles.button}>
           <Text style={styles.buttonText}>Manage Items</Text>
         </Pressable>
       </Link>
 
-      <Link href="/new-order" asChild disabled>
-        <Pressable style={[styles.button, styles.disabledButton]} disabled>
-          <Text style={styles.buttonText}>New Order (Coming Soon)</Text>
-        </Pressable>
-      </Link>
-
-      {/* Option 2: Imperative navigation with useRouter hook
-      <Pressable style={styles.button} onPress={() => router.push('/item-management')}>
-        <Text style={styles.buttonText}>Manage Items (useRouter)</Text>
-      </Pressable>
-      */}
     </View>
   );
 }
